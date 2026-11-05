@@ -1,0 +1,14 @@
+**/node_modules/
+**/dist/
+**/.angular/
+**/coverage/
+**/bin/
+**/obj/
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+*.log
+**/__pycache__/
+*.pyc

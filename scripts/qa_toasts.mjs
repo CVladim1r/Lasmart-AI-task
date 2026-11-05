@@ -1,0 +1,112 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { mkdir } from 'node:fs/promises';
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_CORE_PATH || '/tmp/vibetime-qa/node_modules/playwright-core');
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser', args: ['--no-sandbox'] });
+const reviewDir = new URL('../.impeccable/review/', import.meta.url);
+await mkdir(reviewDir, { recursive: true });
+try {
+  for (const viewport of [{ width: 1094, height: 1048 }, { width: 390, height: 844 }]) {
+    const context = await browser.newContext({ viewport });
+    try {
+      const page = await context.newPage();
+      let authenticated = false, listFails = false, sessionFails = false, expired = false;
+      const owner = { id: '10000000-0000-0000-0000-000000000001', lastName: 'Тестов', firstName: 'Иван', email: 'employee@example.test', createdAt: '' };
+      await page.route('**/api/**', async route => {
+        const method = route.request().method(), path = new URL(route.request().url()).pathname;
+        const respond = (status, body = {}) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+        if (path === '/api/auth/session') return respond(sessionFails ? 500 : authenticated ? 200 : 401, owner);
+        if (path === '/api/auth/login') return respond(404, { code: 'email_not_found' });
+        if (path === '/api/auth/logout') return respond(500);
+        if (method === 'GET') return respond(listFails ? 500 : 200, [owner]);
+        if (method === 'POST') return respond(409, { errors: { email: ['Этот email уже используется.'] } });
+        if (method === 'PUT') return respond(expired ? 401 : 500);
+        return respond(500);
+      });
+      const toast = page.locator('.p-toast-message');
+      const expectToast = async text => {
+        await toast.filter({ hasText: text }).waitFor();
+        assert.equal(await page.locator('.error-banner').count(), 0);
+        assert.equal(await page.locator('.field-error').count(), 0);
+      };
+      const closeToast = async () => {
+        await toast.getByRole('button', { name: 'Закрыть уведомление' }).click();
+        await toast.waitFor({ state: 'detached' });
+      };
+      const modalFocus = () => page.waitForFunction(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement));
+      await page.goto(process.env.QA_UI_URL || 'http://localhost:8080', { waitUntil: 'networkidle' });
+      await page.evaluate(() => document.fonts.ready);
+      assert.equal(await toast.count(), 0, 'normal anonymous session should not display an error');
+      await page.locator('#login-email').fill('missing-qa@example.test');
+      await page.locator('#login-password').fill('dummy-password');
+      const before = await page.locator('#login-email').boundingBox();
+      await page.locator('button.login-action').click();
+      await expectToast('Сотрудник с таким email не найден');
+      const after = await page.locator('#login-email').boundingBox();
+      assert.equal(before.y, after.y, 'toast shifted the login form');
+      await page.waitForFunction(() => document.querySelector('.p-toast-message').getBoundingClientRect().y >= 19);
+      await page.screenshot({ path: new URL(`toast-login-${viewport.width}.png`, reviewDir).pathname, fullPage: true, animations: 'disabled' });
+      const box = await toast.boundingBox();
+      console.log(`Toast geometry ${viewport.width}: ${JSON.stringify(box)}`);
+      assert.ok(box.x >= 0 && viewport.width - box.x - box.width <= 25 && box.y <= 25);
+      await page.screenshot({ path: new URL(`toast-login-${viewport.width}.png`, reviewDir).pathname, fullPage: true, animations: 'disabled' });
+      await toast.waitFor({ state: 'detached', timeout: 7500 });
+
+      authenticated = true;
+      listFails = true;
+      await page.reload({ waitUntil: 'networkidle' });
+      await expectToast('Не удалось загрузить список сотрудников');
+      await closeToast();
+      listFails = false;
+      await page.reload({ waitUntil: 'networkidle' });
+      await page.getByRole('button', { name: 'Создать сотрудника' }).click();
+      await modalFocus();
+      await page.getByRole('button', { name: 'Создать сотрудника' }).last().click();
+      await expectToast('Укажите фамилию');
+      assert.equal(await page.locator('#employee-last-name').getAttribute('aria-invalid'), 'true');
+      const toastZ = await page.locator('.p-toast').evaluate(el => Number(getComputedStyle(el).zIndex));
+      const maskZ = await page.locator('.p-dialog-mask').evaluate(el => Number(getComputedStyle(el).zIndex));
+      assert.ok(toastZ > maskZ, 'toast is hidden by the modal');
+      await page.screenshot({ path: new URL(`toast-form-${viewport.width}.png`, reviewDir).pathname, fullPage: true, animations: 'disabled' });
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog').waitFor({ state: 'detached', timeout: 2000 });
+      await closeToast();
+      await page.getByRole('button', { name: 'Создать сотрудника' }).click();
+      await modalFocus();
+      await page.locator('#employee-last-name').fill('Тестов');
+      await page.locator('#employee-first-name').fill('Иван');
+      await page.locator('#employee-email').fill('employee@example.test');
+      await page.locator('#employee-password').fill('dummy-password-12');
+      await page.locator('#employee-confirm-password').fill('dummy-password-12');
+      await page.getByRole('button', { name: 'Создать сотрудника' }).last().click();
+      await expectToast('Этот email уже используется.');
+      assert.equal(await page.locator('#employee-email').getAttribute('aria-invalid'), 'true');
+      await closeToast();
+      await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'detached' });
+      page.once('dialog', dialog => dialog.accept());
+      await page.getByRole('button', { name: 'Удалить', exact: true }).click();
+      await expectToast('Не удалось удалить сотрудника');
+      await closeToast();
+      await page.getByRole('button', { name: 'Выйти', exact: true }).click();
+      await expectToast('Не удалось завершить сеанс');
+      await closeToast();
+      expired = true;
+      await page.getByRole('button', { name: 'Редактировать', exact: true }).click();
+      await modalFocus();
+      assert.equal(await page.locator('#employee-last-name').inputValue(), owner.lastName);
+      assert.equal(await page.locator('#employee-first-name').inputValue(), owner.firstName);
+      assert.equal(await page.locator('#employee-email').inputValue(), owner.email);
+      assert.equal(await page.locator('#employee-password').inputValue(), '');
+      await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+      await expectToast('Сеанс завершён');
+      await page.getByRole('heading', { name: 'Вход в портал', exact: true }).waitFor();
+      sessionFails = true;
+      await page.reload({ waitUntil: 'networkidle' });
+      await expectToast('Не удалось проверить сеанс');
+      assert.equal(await page.locator('body').evaluate(el => el.scrollWidth <= innerWidth), true);
+      console.log(`PASS ${viewport.width}x${viewport.height}: UI/backend errors, top-right, 5s expiration, close above modal, no inline banners/layout shift, prefilled editor`);
+    } finally { await context.close(); }
+  }
+} finally { await browser.close(); }

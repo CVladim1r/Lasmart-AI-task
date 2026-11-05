@@ -1,0 +1,96 @@
+<p-toast key="errors" position="top-right" [autoZIndex]="false" [life]="5000" styleClass="error-toast" [breakpoints]="{ '540px': { width: 'calc(100% - 32px)', right: '16px', left: '16px' } }"></p-toast>
+<header class="topbar">
+  <span class="brand">lasmart</span>
+  @if (signedIn()) {
+    <div class="session"><span class="current-user">{{ currentUser()?.fullName }}</span><button type="button" class="text-button" (click)="logout()">Выйти</button></div>
+  } @else { <span class="portal-label">Портал сотрудников</span> }
+</header>
+@if (restoringSession()) {
+  <main class="session-loading" role="status">Проверяем сеанс…</main>
+} @else if (!signedIn()) {
+  <main class="login-shell">
+    <section class="login-form" aria-labelledby="login-title">
+      <h1 id="login-title">Вход в портал</h1>
+      <p class="login-description">Введите email и пароль сотрудника.</p>
+      <form (ngSubmit)="login()">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input pInputText id="login-email" placeholder="ivan@example.com" type="email" autocomplete="username" required
+            [class.invalid-field]="loginEmailInvalid()" [attr.aria-invalid]="loginEmailInvalid()"
+            [attr.aria-description]="loginEmailInvalid() ? loginError() : null"
+            [ngModel]="loginEmail()" (ngModelChange)="loginEmail.set($event); loginEmailInvalid.set(false)" name="email" />
+        </div>
+        <div class="field">
+          <label for="login-password">Пароль</label>
+          <div class="password-field">
+          <input pInputText id="login-password" placeholder="Введите пароль" [type]="loginPasswordVisible() ? 'text' : 'password'" autocomplete="current-password" required
+            [class.invalid-field]="loginPasswordInvalid()" [attr.aria-invalid]="loginPasswordInvalid()"
+            [attr.aria-description]="loginPasswordInvalid() ? loginError() : null"
+            [ngModel]="loginPassword()" (ngModelChange)="loginPassword.set($event); loginPasswordInvalid.set(false)" name="password" />
+          <button type="button" class="password-toggle" aria-controls="login-password"
+            [attr.aria-label]="loginPasswordVisible() ? 'Скрыть пароль' : 'Показать пароль'"
+            [attr.aria-pressed]="loginPasswordVisible()"
+            (click)="loginPasswordVisible.set(!loginPasswordVisible())"><i class="pi" [class.pi-eye]="!loginPasswordVisible()" [class.pi-eye-slash]="loginPasswordVisible()" aria-hidden="true"></i></button>
+          </div>
+        </div>
+        <p-button type="submit" label="Войти" icon="pi pi-arrow-right" iconPos="right" styleClass="primary-action login-action" [loading]="loggingIn()" [disabled]="loggingIn()"></p-button>
+      </form>
+    </section>
+  </main>
+} @else {
+  <nav class="tabs" aria-label="Разделы портала"><span aria-current="page">Сотрудники</span></nav>
+  <main class="workspace">
+    <div class="page-heading">
+      <div class="title-group"><h1>Сотрудники</h1><span class="record-count">Записей: {{ employees().length }}</span></div>
+      <p-button label="Создать сотрудника" icon="pi pi-plus" styleClass="primary-action" (onClick)="openCreate()"></p-button>
+    </div>
+    <section aria-label="Список сотрудников" [attr.aria-busy]="loading()">
+      <div class="table-toolbar">
+        <label class="search-box"><i class="pi pi-search" aria-hidden="true"></i><input pInputText placeholder="Поиск по ФИО" aria-label="Фильтр по ФИО"
+          [ngModel]="filter()" (ngModelChange)="filter.set($event); page.set(0)" /></label>
+        <span class="search-hint">{{ loading() ? 'Загружаем сотрудников…' : 'Поиск без учёта регистра' }}</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th scope="col" [attr.aria-sort]="sortField() === 'name' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'"><button type="button" class="sort-button" (click)="sortBy('name')">ФИО <i class="pi" [class.pi-arrow-up]="sortField() === 'name' && sortDirection() === 'asc'" [class.pi-arrow-down]="sortField() === 'name' && sortDirection() === 'desc'" [class.pi-sort-alt]="sortField() !== 'name'" aria-hidden="true"></i></button></th>
+            <th scope="col" [attr.aria-sort]="sortField() === 'email' ? (sortDirection() === 'asc' ? 'ascending' : 'descending') : 'none'"><button type="button" class="sort-button" (click)="sortBy('email')">Email <i class="pi" [class.pi-arrow-up]="sortField() === 'email' && sortDirection() === 'asc'" [class.pi-arrow-down]="sortField() === 'email' && sortDirection() === 'desc'" [class.pi-sort-alt]="sortField() !== 'email'" aria-hidden="true"></i></button></th>
+            <th scope="col" class="actions-heading">Действия</th>
+          </tr></thead>
+          <tbody>
+            @if (loading() && !employees().length) { <tr><td colspan="3" class="empty-state" role="status">Загружаем сотрудников…</td></tr> }
+            @else {
+              @for (employee of visibleEmployees; track employee.id) {
+                <tr>
+                  <td class="name-cell">{{ fullName(employee) }}</td>
+                  <td class="email-cell">{{ employee.email }}</td>
+                  <td class="actions-cell"><button type="button" class="edit-button" aria-label="Редактировать" (click)="openEdit(employee)"><i class="pi pi-pencil" aria-hidden="true"></i><span>Редактировать</span></button><button type="button" class="icon-button delete-button" aria-label="Удалить" (click)="deleteEmployee(employee)"><i class="pi pi-trash" aria-hidden="true"></i></button></td>
+                </tr>
+              } @empty {
+                <tr><td colspan="3" class="empty-state"><strong>Сотрудники не найдены</strong><span>{{ filter() ? 'Попробуйте другую фамилию, имя или отчество.' : 'Создайте сотрудника, чтобы добавить его в реестр.' }}</span></td></tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      <footer class="table-footer">
+        <div class="page-size" role="group" aria-label="Строк на странице"><span>Строк на странице</span>@for (size of [25, 50, 100]; track size) { <button type="button" [class.active]="pageSize() === size" [attr.aria-pressed]="pageSize() === size" (click)="pageSize.set(size); page.set(0)">{{ size }}</button> }</div>
+        <div class="pagination"><span class="page-count" aria-live="polite">{{ filteredEmployees.length ? page() * pageSize() + 1 : 0 }}–{{ page() * pageSize() + visibleEmployees.length }} из {{ filteredEmployees.length }}</span><button type="button" class="icon-button" aria-label="Предыдущая страница" [disabled]="page() === 0" (click)="page.set(page() - 1)"><i class="pi pi-chevron-left" aria-hidden="true"></i></button><span class="page-number" aria-label="Текущая страница">{{ page() + 1 }}</span><button type="button" class="icon-button" aria-label="Следующая страница" [disabled]="(page() + 1) * pageSize() >= filteredEmployees.length" (click)="page.set(page() + 1)"><i class="pi pi-chevron-right" aria-hidden="true"></i></button></div>
+      </footer>
+    </section>
+  </main>
+  <p-dialog [header]="editing() ? 'Редактировать сотрудника' : 'Новый сотрудник'" [visible]="dialogOpen()" (visibleChange)="dialogOpen.set($event)" [modal]="true" [draggable]="false" [resizable]="false" closeAriaLabel="Закрыть" [style]="{ width: 'min(560px, calc(100vw - 32px))' }" styleClass="employee-dialog">
+    <p class="form-description">{{ editing() ? 'Измените данные сотрудника. Пустой пароль сохранит текущий.' : 'Укажите данные для входа нового сотрудника.' }}</p>
+    <form class="employee-form" (ngSubmit)="saveEmployee()">
+      <div class="field-grid">
+        <div class="field"><label for="employee-last-name">Фамилия</label><input pInputText id="employee-last-name" required placeholder="Иванов" maxlength="100" [attr.autocomplete]="editing() ? 'off' : 'family-name'" [class.invalid-field]="fieldErrors()['lastName']" [attr.aria-invalid]="!!fieldErrors()['lastName']" [attr.aria-description]="fieldErrors()['lastName'] || null" [ngModel]="draft().lastName" (ngModelChange)="draft.set({...draft(), lastName: $event}); fieldErrors.set({...fieldErrors(), lastName: ''})" name="lastName" /></div>
+        <div class="field"><label for="employee-first-name">Имя</label><input pInputText id="employee-first-name" required placeholder="Иван" maxlength="100" [attr.autocomplete]="editing() ? 'off' : 'given-name'" [class.invalid-field]="fieldErrors()['firstName']" [attr.aria-invalid]="!!fieldErrors()['firstName']" [attr.aria-description]="fieldErrors()['firstName'] || null" [ngModel]="draft().firstName" (ngModelChange)="draft.set({...draft(), firstName: $event}); fieldErrors.set({...fieldErrors(), firstName: ''})" name="firstName" /></div>
+        <div class="field full-field"><label for="employee-middle-name">Отчество <span class="optional">Необязательно</span></label><input pInputText id="employee-middle-name" placeholder="Иванович" maxlength="100" autocomplete="additional-name" [class.invalid-field]="fieldErrors()['middleName']" [attr.aria-invalid]="!!fieldErrors()['middleName']" [attr.aria-description]="fieldErrors()['middleName'] || null" [ngModel]="draft().middleName" (ngModelChange)="draft.set({...draft(), middleName: $event}); fieldErrors.set({...fieldErrors(), middleName: ''})" name="middleName" /></div>
+        <div class="field full-field"><label for="employee-email">Email</label><input pInputText id="employee-email" required placeholder="ivan@example.com" type="email" maxlength="254" [attr.autocomplete]="editing() ? 'off' : 'email'" [class.invalid-field]="fieldErrors()['email']" [attr.aria-invalid]="!!fieldErrors()['email']" [attr.aria-description]="fieldErrors()['email'] || null" [ngModel]="draft().email" (ngModelChange)="draft.set({...draft(), email: $event}); fieldErrors.set({...fieldErrors(), email: ''})" name="employeeEmail" /></div>
+        <div class="field"><label for="employee-password">Пароль</label><div class="password-field"><input pInputText id="employee-password" [type]="employeePasswordVisible() ? 'text' : 'password'" [required]="!editing()" maxlength="1024" autocomplete="new-password" [class.invalid-field]="fieldErrors()['password']" [attr.aria-invalid]="!!fieldErrors()['password']" aria-describedby="password-hint" [attr.aria-description]="fieldErrors()['password'] || null" [ngModel]="draft().password" (ngModelChange)="draft.set({...draft(), password: $event}); fieldErrors.set({...fieldErrors(), password: ''})" name="employeePassword" /><button type="button" class="password-toggle" aria-controls="employee-password" [attr.aria-label]="employeePasswordVisible() ? 'Скрыть пароль сотрудника' : 'Показать пароль сотрудника'" [attr.aria-pressed]="employeePasswordVisible()" (click)="employeePasswordVisible.set(!employeePasswordVisible())"><i class="pi" [class.pi-eye]="!employeePasswordVisible()" [class.pi-eye-slash]="employeePasswordVisible()" aria-hidden="true"></i></button></div><small id="password-hint">Не менее 12 символов</small></div>
+        <div class="field"><label for="employee-confirm-password">Подтверждение пароля</label><div class="password-field"><input pInputText id="employee-confirm-password" [type]="confirmPasswordVisible() ? 'text' : 'password'" [required]="!editing()" maxlength="1024" autocomplete="new-password" [class.invalid-field]="fieldErrors()['confirmPassword']" [attr.aria-invalid]="!!fieldErrors()['confirmPassword']" [attr.aria-description]="fieldErrors()['confirmPassword'] || null" [ngModel]="draft().confirmPassword" (ngModelChange)="draft.set({...draft(), confirmPassword: $event}); fieldErrors.set({...fieldErrors(), confirmPassword: ''})" name="confirmPassword" /><button type="button" class="password-toggle" aria-controls="employee-confirm-password" [attr.aria-label]="confirmPasswordVisible() ? 'Скрыть подтверждение пароля' : 'Показать подтверждение пароля'" [attr.aria-pressed]="confirmPasswordVisible()" (click)="confirmPasswordVisible.set(!confirmPasswordVisible())"><i class="pi" [class.pi-eye]="!confirmPasswordVisible()" [class.pi-eye-slash]="confirmPasswordVisible()" aria-hidden="true"></i></button></div></div>
+      </div>
+      <div class="dialog-actions"><p-button type="button" label="Отмена" styleClass="secondary-action" [disabled]="saving()" (onClick)="dialogOpen.set(false)"></p-button><p-button type="submit" [label]="editing() ? 'Сохранить' : 'Создать сотрудника'" styleClass="primary-action" [disabled]="saving()" [loading]="saving()"></p-button></div>
+    </form>
+  </p-dialog>
+}

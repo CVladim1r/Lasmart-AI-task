@@ -1,0 +1,10 @@
+.git
+.env
+.env.*
+**/node_modules
+**/dist
+**/.angular
+**/bin
+**/obj
+**/coverage
+**/*.log

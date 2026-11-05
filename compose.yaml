@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: vibetime
+      POSTGRES_USER: vibetime
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibetime -d vibetime"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Employees: Host=db;Port=5432;Database=vibetime;Username=vibetime;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      Seed__Email: ${SEED_EMAIL:?Set SEED_EMAIL in .env}
+      Seed__Password: ${SEED_PASSWORD:?Set SEED_PASSWORD in .env}
+      Seed__FirstName: ${SEED_FIRST_NAME:-Первый}
+      Seed__LastName: ${SEED_LAST_NAME:-Сотрудник}
+    volumes:
+      - data_protection:/home/app/.aspnet/DataProtection-Keys
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  data_protection:
