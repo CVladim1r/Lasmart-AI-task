@@ -1,0 +1,80 @@
+name: build and api checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vibetime
+          POSTGRES_USER: vibetime
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vibetime -d vibetime"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+      - name: Test frontend
+        run: npm test -- --watch=false
+        working-directory: frontend
+      - name: Build API
+        run: dotnet build backend/VibeTime.Api/VibeTime.Api.csproj -c Release
+      - name: Check API against PostgreSQL
+        env:
+          ASPNETCORE_URLS: http://localhost:5000
+          ConnectionStrings__Employees: Host=localhost;Database=vibetime;Username=vibetime;Password=ci-only-password
+        run: |
+          set -euo pipefail
+          export Seed__Email="admin@example.test"
+          export Seed__Password="$(python3 -c "print('LasmartDemo-' + 'a' * 61)")"
+          export QA_BASE_URL="http://localhost:5000"
+          export QA_EMAIL="$Seed__Email"
+          export QA_PASSWORD="$Seed__Password"
+          dotnet run --no-build -c Release --project backend/VibeTime.Api > /tmp/api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent "$QA_BASE_URL/api/health" > /dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            cat /tmp/api.log
+            exit 1
+          fi
+          python3 scripts/qa_api.py
